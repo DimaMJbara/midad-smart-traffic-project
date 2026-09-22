@@ -216,3 +216,41 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+
+# ===== Computer Vision Project =====
+
+# Models (أوزان الموديلات - كبيرة جداً)
+*.pt
+*.pth
+*.onnx
+*.weights
+*.h5
+*.tflite
+*.pb
+
+# Datasets
+datasets/
+data/
+*.zip
+*.tar.gz
+
+# Video files (فيديوهات الاختبار)
+*.mp4
+*.avi
+*.mov
+*.mkv
+*.flv
+
+# YOLO outputs
+runs/
+weights/
+outputs/
+results/
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# CSV / JSON outputs (نتائج مؤقتة)
+outputs/*.csv
+outputs/*.json
