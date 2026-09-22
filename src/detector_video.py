@@ -27,6 +27,14 @@ MODEL_PATH = "yolo11n.pt"
 # ✅ العتبة النهائية (بعد التجارب)
 CONFIDENCE_THRESHOLD = 0.3
 
+# عتبات خاصة لكل فئة
+CLASS_THRESHOLDS = {
+    2: 0.3,      # car
+    3: 0.15,     # motorcycle ← أقل عشان نكتشف موتورات أكثر
+    5: 0.3,      # bus
+    7: 0.3,      # truck
+}
+
 # فئات المركبات
 VEHICLE_CLASSES = {
     2: "car",
@@ -46,7 +54,7 @@ CLASS_COLORS = {
 # ⚠️ حد تجريبي: كم إطار نعالج؟
 # None = الفيديو كامل
 # رقم = عدد الإطارات (مثلاً 300 = 10 ثواني)
-MAX_FRAMES = None
+MAX_FRAMES = 300
 
 
 # ============================================================
@@ -155,8 +163,9 @@ def process_video(video_path: Path, output_path: Path, model: YOLO,
         if not ret:
             break
         
-        # الكشف
-        results = model(frame, conf=confidence, verbose=False)
+        # الكشف بعتبة عامة واطية — الفلترة رح تصير بعدين
+        results = model(frame, conf=0.15, verbose=False)
+
         
         # التصفية
         detections = []
@@ -171,6 +180,12 @@ def process_video(video_path: Path, output_path: Path, model: YOLO,
                     continue
                 
                 conf_val = float(box.conf[0])
+                
+                # فلترة بعتبة خاصة لكل فئة
+                threshold = CLASS_THRESHOLDS.get(class_id, 0.3)
+                if conf_val < threshold:
+                    continue
+                
                 x1, y1, x2, y2 = box.xyxy[0].tolist()
                 
                 detections.append({
@@ -179,6 +194,7 @@ def process_video(video_path: Path, output_path: Path, model: YOLO,
                     "confidence": conf_val,
                     "bbox": (int(x1), int(y1), int(x2), int(y2)),
                 })
+
         
         # الرسم
         frame = draw_detections(frame, detections)
