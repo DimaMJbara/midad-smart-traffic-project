@@ -1,0 +1,20 @@
+# Core
+ultralytics>=8.3.0
+opencv-python>=4.10.0
+numpy>=1.26.0
+pillow>=10.0.0
+
+# Tracking & Video
+lap>=0.5.12
+filterpy>=1.4.5
+
+# Jupyter
+jupyter>=1.0.0
+ipykernel>=6.29.0
+
+# Visualization
+matplotlib>=3.8.0
+
+# Utilities
+pyyaml>=6.0.0
+tqdm>=4.66.0
