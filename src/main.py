@@ -57,6 +57,35 @@ COUNTING_LINE_RATIO = 0.6
 MAX_FRAMES = None
 
 
+FILTER_TYPE = "none"   # "gaussian" / "median" / "none"
+
+
+# ============================================================
+# الفلاتر (Enhancement)
+# ============================================================
+
+def enhance_frame(frame, filter_type="median"):
+    """
+    تحسين جودة الإطار (إزالة الضوضاء)
+    
+    Args:
+        frame: الإطار الأصلي
+        filter_type: "median" / "gaussian" / "none"
+    
+    Returns:
+        الإطار المُحسّن
+    """
+    if filter_type == "median":
+        return cv2.medianBlur(frame, 5)
+    
+    elif filter_type == "gaussian":
+        return cv2.GaussianBlur(frame, (5, 5), 0)
+    
+    else:  # "none"
+        return frame
+
+
+
 # ============================================================
 # 1. الكشف (Detection)
 # ============================================================
@@ -91,7 +120,6 @@ def detect_vehicles(model, frame):
             })
     
     return detections
-
 
 
 # ============================================================
@@ -269,7 +297,11 @@ def main():
             break
         
         # 1. كشف
-        detections = detect_vehicles(model, frame)
+        
+        frame_processed = enhance_frame(frame, FILTER_TYPE)
+        
+        detections = detect_vehicles(model, frame_processed)
+
 
         # 2. تحويل لـ numpy
         if len(detections) > 0:
