@@ -13,7 +13,12 @@ from ultralytics import YOLO
 from pathlib import Path
 import time
 import numpy as np
-from sort import Sort
+
+try:
+    from .sort import Sort
+except ImportError:
+    from sort import Sort
+
 
 
 
@@ -54,7 +59,7 @@ CLASS_COLORS = {
 COUNTING_LINE_RATIO = 0.6
 
 #  حد تجريبي (None = الفيديو كامل)
-MAX_FRAMES = None
+MAX_FRAMES = 300
 
 
 FILTER_TYPE = "none"   # "gaussian" / "median" / "none"
@@ -90,36 +95,80 @@ def enhance_frame(frame, filter_type="median"):
 # 1. الكشف (Detection)
 # ============================================================
 
+
+
 def detect_vehicles(model, frame):
-    """كشف المركبات في إطار واحد"""
+    """كشف المركبات وإزالة الصناديق المتداخلة."""
+
     results = model(frame, conf=0.15, verbose=False)
-    
+
     detections = []
+
     for result in results:
         boxes = result.boxes
         if boxes is None:
             continue
-        
+
         for box in boxes:
             class_id = int(box.cls[0])
+
             if class_id not in VEHICLE_CLASSES:
                 continue
-            
+
             conf_val = float(box.conf[0])
             threshold = CLASS_THRESHOLDS.get(class_id, 0.3)
+
             if conf_val < threshold:
                 continue
-            
+
             x1, y1, x2, y2 = box.xyxy[0].tolist()
-            
+
             detections.append({
                 "class_id": class_id,
                 "class_name": VEHICLE_CLASSES[class_id],
                 "confidence": conf_val,
                 "bbox": (int(x1), int(y1), int(x2), int(y2)),
             })
-    
-    return detections
+
+    # إزالة الصناديق المتكررة، حتى لو اختلف تصنيفها
+    filtered_detections = []
+
+    detections.sort(
+        key=lambda det: det["confidence"],
+        reverse=True
+    )
+
+    for det in detections:
+        x1, y1, x2, y2 = det["bbox"]
+        should_keep = True
+
+        for kept in filtered_detections:
+            kx1, ky1, kx2, ky2 = kept["bbox"]
+
+            ix1 = max(x1, kx1)
+            iy1 = max(y1, ky1)
+            ix2 = min(x2, kx2)
+            iy2 = min(y2, ky2)
+
+            intersection = (
+                max(0, ix2 - ix1) * max(0, iy2 - iy1)
+            )
+
+            area_det = max(0, x2 - x1) * max(0, y2 - y1)
+            area_kept = max(0, kx2 - kx1) * max(0, ky2 - ky1)
+
+            union = area_det + area_kept - intersection
+            iou = intersection / union if union > 0 else 0.0
+
+            # حذف التكرار إذا كان التداخل كبيراً
+            if iou > 0.65:
+                should_keep = False
+                break
+
+        if should_keep:
+            filtered_detections.append(det)
+
+    return filtered_detections
 
 
 # ============================================================
@@ -127,8 +176,8 @@ def detect_vehicles(model, frame):
 # ============================================================
 
 class VehicleCounter:
-    """عدّاد المركبات"""
-    
+    """عدّ المركبات حسب النوع واتجاه الحركة."""
+
     def __init__(self, line_y: int):
         self.line_y = line_y
         self.counts = {
@@ -137,55 +186,67 @@ class VehicleCounter:
             "bus": 0,
             "truck": 0,
         }
+        self.direction_counts = {
+            "toward_camera": {
+                "car": 0,
+                "motorcycle": 0,
+                "bus": 0,
+                "truck": 0,
+            },
+            "away_from_camera": {
+                "car": 0,
+                "motorcycle": 0,
+                "bus": 0,
+                "truck": 0,
+            },
+        }
         self.counted_ids = set()
         self.track_history = {}
-    
+
     def check_crossing(self, det):
+        """اكتشاف عبور خط العدّ وتسجيل اتجاه المركبة."""
         if "id" not in det:
             return False
-        
+
         track_id = det["id"]
-        
-        # ⭐️ الموتور: عدّ فوراً إذا ظهر قريب من الخط
-        if det["class_name"] == "motorcycle":
-            # إذا عدّيناها، تجاهلي
-            if track_id in self.counted_ids:
-                return False
-            
-            # احسبي المسافة من الخط
-            x1, y1, x2, y2 = det["bbox"]
-            center_y = (y1 + y2) // 2
-            distance_from_line = abs(center_y - self.line_y)
-            
-            # إذا قريب من الخط (200 بكسل) → عدّيه
-            if distance_from_line < 200:
-                self.counts[det["class_name"]] += 1
-                self.counted_ids.add(track_id)
-                return True
-            
+        class_name = det["class_name"]
+
+        if class_name not in self.counts or track_id in self.counted_ids:
             return False
-        
-        # للباقي: الطريقة العادية
-        if track_id in self.counted_ids:
-            return False
-        
+
         x1, y1, x2, y2 = det["bbox"]
         center_y = (y1 + y2) // 2
-        
-        if track_id in self.track_history:
-            prev_y = self.track_history[track_id]
-            
-            if prev_y < self.line_y <= center_y:
-                self.counts[det["class_name"]] += 1
-                self.counted_ids.add(track_id)
-                return True
-        
-        self.track_history[track_id] = center_y
-        return False
 
-    
+        prev_y = self.track_history.get(track_id)
+        self.track_history[track_id] = center_y
+
+        # عند أول ظهور للمركبة، نحفظ موقعها فقط.
+        if prev_y is None:
+            return False
+
+        direction = None
+        if prev_y < self.line_y <= center_y:
+            direction = "toward_camera"
+        elif prev_y > self.line_y >= center_y:
+            direction = "away_from_camera"
+
+        if direction is None:
+            return False
+
+        self.counts[class_name] += 1
+        self.direction_counts[direction][class_name] += 1
+        self.counted_ids.add(track_id)
+        return True
+
     def get_total(self):
+        """إجمالي المركبات في الاتجاهين."""
         return sum(self.counts.values())
+
+    def get_direction_total(self, direction):
+        """إجمالي المركبات في اتجاه محدد."""
+        if direction not in self.direction_counts:
+            raise ValueError(f"Unknown direction: {direction}")
+        return sum(self.direction_counts[direction].values())
 
 
 # ============================================================
@@ -217,29 +278,74 @@ def draw_counting_line(frame, line_y):
     h, w = frame.shape[:2]
     color = (255, 255, 0)   # 🔵 سماوي (BGR)
     cv2.line(frame, (0, line_y), (w, line_y), color, 3)
-    cv2.putText(frame, "COUNTING LINE", (10, line_y - 10),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
+    cv2.putText(
+    frame,
+    "COUNTING LINE",
+    (10, line_y + 30),
+    cv2.FONT_HERSHEY_SIMPLEX,
+    0.8,
+    (255, 255, 0),
+    2,
+    cv2.LINE_AA
+    )
     return frame
+
+
 
 
 
 def draw_stats(frame, counter):
+    """Display vehicle statistics directly on the video."""
+
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    scale = 0.48
+    thickness = 1
+    color_purple = (220, 80, 220)
+
+    x = 18
     y = 30
-    cv2.putText(frame, "Counts:", (10, y),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
-    
-    for cls, count in counter.counts.items():
-        y += 30
-        text = f"{cls}: {count}"
-        cv2.putText(frame, text, (10, y),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
-    
-    y += 40
-    total = f"TOTAL: {counter.get_total()}"
-    cv2.putText(frame, total, (10, y),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-    
+    line_gap = 25
+
+    cv2.putText(
+        frame, "VEHICLE COUNTS", (x, y),
+        font, 0.58, (0, 255, 255), 1, cv2.LINE_AA
+    )
+
+    for class_name in ("car", "motorcycle", "bus", "truck"):
+        y += line_gap
+        cv2.putText(
+            frame,
+            f"{class_name.capitalize()}: {counter.counts[class_name]}",
+            (x, y), font, scale, color_purple, thickness, cv2.LINE_AA
+        )
+
+    y += line_gap
+    cv2.putText(
+        frame, f"Total: {counter.get_total()}",
+        (x, y), font, scale, (0, 255, 0), thickness, cv2.LINE_AA
+    )
+
+    toward = counter.direction_counts["toward_camera"]
+    away = counter.direction_counts["away_from_camera"]
+
+    toward_total = sum(toward.values()) if isinstance(toward, dict) else toward
+    away_total = sum(away.values()) if isinstance(away, dict) else away
+
+    y += line_gap
+    cv2.putText(
+        frame, f"Toward camera: {toward_total}",
+        (x, y), font, scale, color_purple, thickness, cv2.LINE_AA
+    )
+
+    y += line_gap
+    cv2.putText(
+        frame, f"Away from camera: {away_total}",
+        (x, y), font, scale, color_purple, thickness, cv2.LINE_AA
+    )
+
     return frame
+
+
 
 
 # ============================================================
@@ -302,6 +408,14 @@ def main():
         
         detections = detect_vehicles(model, frame_processed)
 
+        for det in detections:
+          if det["class_name"] in ("bus", "truck"):
+           print(
+            f'YOLO: {det["class_name"]} | '
+            f'confidence={det["confidence"]:.2f} | '
+            f'bbox={det["bbox"]}'
+               )
+
 
         # 2. تحويل لـ numpy
         if len(detections) > 0:
@@ -316,23 +430,59 @@ def main():
         tracks = tracker.update(det_array)
 
         # 4. تحويل النتائج
+        
+        # 4. ربط نتائج SORT مع كشف YOLO باستخدام IoU
         tracked_detections = []
+        used_detection_indices = set()
+
         for track in tracks:
             x1, y1, x2, y2, track_id = track
-            
-            for det in detections:
+
+            best_iou = 0.0
+            best_index = None
+
+            for i, det in enumerate(detections):
+                if i in used_detection_indices:
+                    continue
+
                 dx1, dy1, dx2, dy2 = det["bbox"]
-                if abs(dx1 - x1) < 10 and abs(dy1 - y1) < 10:
-                    tracked_detections.append({
-                        "id": int(track_id),
-                        "class_id": det["class_id"],
-                        "class_name": det["class_name"],
-                        "confidence": det["confidence"],
-                        "bbox": (int(x1), int(y1), int(x2), int(y2)),
-                    })
-                    break
+
+                ix1 = max(x1, dx1)
+                iy1 = max(y1, dy1)
+                ix2 = min(x2, dx2)
+                iy2 = min(y2, dy2)
+
+                iw = max(0, ix2 - ix1)
+                ih = max(0, iy2 - iy1)
+                intersection = iw * ih
+
+                area_track = max(0, x2 - x1) * max(0, y2 - y1)
+                area_det = max(0, dx2 - dx1) * max(0, dy2 - dy1)
+                union = area_track + area_det - intersection
+
+                iou = intersection / union if union > 0 else 0.0
+
+                if iou > best_iou:
+                    best_iou = iou
+                    best_index = i
+
+            if best_index is not None and best_iou >= 0.3:
+                det = detections[best_index]
+                used_detection_indices.add(best_index)
+
+                tracked_detections.append({
+                    "id": int(track_id),
+                    "class_id": det["class_id"],
+                    "class_name": det["class_name"],
+                    "confidence": det["confidence"],
+                    "bbox": (
+                        int(x1), int(y1),
+                        int(x2), int(y2)
+                    ),
+                })
 
         detections = tracked_detections
+
 
         
         for det in detections:
