@@ -20,6 +20,8 @@ except ImportError:
     from sort import Sort
 
 
+
+
 # ============================================================
 # الإعدادات (Configuration)
 # ============================================================
@@ -88,9 +90,12 @@ def enhance_frame(frame, filter_type="median"):
         return frame
 
 
+
 # ============================================================
 # 1. الكشف (Detection)
 # ============================================================
+
+
 
 def detect_vehicles(model, frame):
     """كشف المركبات وإزالة الصناديق المتداخلة."""
@@ -286,6 +291,9 @@ def draw_counting_line(frame, line_y):
     return frame
 
 
+
+
+
 def draw_stats(frame, counter):
     """Display vehicle statistics directly on the video."""
 
@@ -320,21 +328,6 @@ def draw_stats(frame, counter):
     toward = counter.direction_counts["toward_camera"]
     away = counter.direction_counts["away_from_camera"]
 
-    # Toward camera (بالتفصيل)
-    y += line_gap
-    cv2.putText(frame, "Toward Camera:", (x, y), font, 0.55, (0, 255, 255), 1, cv2.LINE_AA)
-    for cls in ("car", "motorcycle", "bus", "truck"):
-        y += line_gap - 5
-        cv2.putText(frame, f"  {cls.capitalize()}: {toward[cls]}", (x, y), font, scale, color_purple, thickness, cv2.LINE_AA)
-
-    # Away from camera (بالتفصيل)
-    y += line_gap
-    cv2.putText(frame, "Away from Camera:", (x, y), font, 0.55, (0, 255, 255), 1, cv2.LINE_AA)
-    for cls in ("car", "motorcycle", "bus", "truck"):
-        y += line_gap - 5
-        cv2.putText(frame, f"  {cls.capitalize()}: {away[cls]}", (x, y), font, scale, color_purple, thickness, cv2.LINE_AA)
-
-
     toward_total = sum(toward.values()) if isinstance(toward, dict) else toward
     away_total = sum(away.values()) if isinstance(away, dict) else away
 
@@ -353,13 +346,15 @@ def draw_stats(frame, counter):
     return frame
 
 
+
+
 # ============================================================
 # 4. الدالة الرئيسية (Main)
 # ============================================================
 
 def main():
     print("=" * 60)
-    print(" Midad Smart Traffic - Full System")
+    print("🚦 Midad Smart Traffic - Full System")
     print("=" * 60)
     
     print(f"\n[Loading] Model: {MODEL_PATH}")
@@ -412,6 +407,14 @@ def main():
         frame_processed = enhance_frame(frame, FILTER_TYPE)
         
         detections = detect_vehicles(model, frame_processed)
+
+        for det in detections:
+          if det["class_name"] in ("bus", "truck"):
+           print(
+            f'YOLO: {det["class_name"]} | '
+            f'confidence={det["confidence"]:.2f} | '
+            f'bbox={det["bbox"]}'
+               )
 
 
         # 2. تحويل لـ numpy
@@ -512,17 +515,6 @@ def main():
         print(f"   - {cls}: {count}")
     print(f"   ─────────")
     print(f"   Total: {counter.get_total()}")
-    
-    print(f"\nToward Camera:")
-    for cls, count in counter.direction_counts["toward_camera"].items():
-        print(f"   - {cls}: {count}")
-    print(f"   Total: {counter.get_direction_total('toward_camera')}")
-
-    print(f"\nAway from Camera:")
-    for cls, count in counter.direction_counts["away_from_camera"].items():
-        print(f"   - {cls}: {count}")
-    print(f"   Total: {counter.get_direction_total('away_from_camera')}")
-
     print(f"\nOutput Video: {OUTPUT_PATH}")
     print("Done successfully!")
 
