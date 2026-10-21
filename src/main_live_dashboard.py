@@ -44,12 +44,24 @@ CLASS_THRESHOLDS = {
     7: 0.3,      # truck
 }
 
-# فئات المركبات
+# فئات المركبات بناءً على ترتيب روبوفلو الفعلي
 VEHICLE_CLASSES = {
-    2: "car",
-    3: "motorcycle",
-    5: "bus",
-    7: "truck",
+    0: "bus",
+    1: "car",
+    2: "motorcycle",
+    3: "traffic_police_motorcycle",
+    4: "truck",
+    5: "van",
+}
+
+# ألوان الفئات (BGR)
+CLASS_COLORS = {
+    0: (0, 165, 255),    # bus - أصفر
+    1: (0, 255, 0),      # car - أخضر
+    2: (255, 0, 0),      # motorcycle - أزرق
+    3: (0, 255, 255),    # traffic_police_motorcycle - سماوي
+    4: (255, 0, 255),    # truck - أرجواني
+    5: (255, 128, 0),    # van - أزرق فاتح
 }
 
 # تعرفة العبور بالدولار حسب توصيف المشروع.
@@ -62,13 +74,7 @@ FEE_RATES = {
     "traffic_police_motorcycle": 0.0, # مستثناة من المنع
 }
 
-# ألوان الفئات الأصلية (BGR)
-CLASS_COLORS = {
-    2: (0, 255, 0),      # car - أخضر
-    3: (255, 0, 0),      # motorcycle - أزرق
-    5: (0, 165, 255),    # bus - أصفر
-    7: (255, 0, 255),    # truck - أرجواني
-}
+
 
 # خط العدّ (نسبة من ارتفاع الإطار)
 COUNTING_LINE_RATIO = 0.6
@@ -398,9 +404,7 @@ def main():
     print(f"\n[Loading] Model: {MODEL_PATH}")
     model = YOLO(MODEL_PATH)
     print("[OK] Model loaded successfully!")
-    print("Model Classes:", model.names)
-    class_name = model.names.get(class_id, "unknown")
-    print(f"[DEBUG] Detected Class ID: {class_id} ({class_name}), Conf: {conf_val:.2f}")
+
     
     if not VIDEO_PATH.exists():
         print(f"[ERROR] Video not found: {VIDEO_PATH}")
