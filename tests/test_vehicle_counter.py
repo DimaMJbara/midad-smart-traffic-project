@@ -1,6 +1,6 @@
 
 import unittest
-from src.main import VehicleCounter
+from src.main_live_dashboard import VehicleCounter
 
 
 def make_detection(track_id, class_name, center_y):
