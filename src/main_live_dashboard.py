@@ -80,7 +80,7 @@ FEE_RATES = {
 COUNTING_LINE_RATIO = 0.6
 
 # حد تجريبي (None = الفيديو كامل)
-MAX_FRAMES = None
+MAX_FRAMES = 500
 
 FILTER_TYPE = "none"   # "gaussian" / "median" / "none"
 
