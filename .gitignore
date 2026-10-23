@@ -221,7 +221,6 @@ __marimo__/
 # ===== Computer Vision Project =====
 
 # Models (أوزان الموديلات - كبيرة جداً)
-*.pt
 *.pth
 *.onnx
 *.weights
